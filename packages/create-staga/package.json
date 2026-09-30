@@ -1,0 +1,14 @@
+{
+  "name": "create-staga",
+  "version": "0.0.0",
+  "description": "Template downloader for staga app",
+  "main": "./dist/index.js",
+  "bin": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "repository": "https://github.com/do4ng/staga",
+  "dependencies": {
+    "animaux": "^0.1.0"
+  }
+}

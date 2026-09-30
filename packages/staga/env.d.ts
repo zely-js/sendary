@@ -1,0 +1,159 @@
+/* eslint-disable @typescript-eslint/no-misused-new */
+
+// $staga-manifest module is page map for internal core routing.
+declare module '$staga-manifest' {
+  export interface PageManifest {
+    regexp: RegExp;
+    path: string;
+    originalPath: string;
+    params: string[];
+    buildPath: string;
+    buildServerPath: string;
+    allowedParams?: Record<string, string[]>;
+  }
+
+  export const PAGES_MANIFEST: PageManifest[];
+}
+
+declare module '$staga-pages' {
+  const pages: Record<string, () => Promise<any>>;
+  export = pages;
+}
+
+declare module '$staga-router' {
+  import { PageManifest } from '$staga-manifest';
+
+  type StagaLayout = (props: { children: React.ReactNode }) => React.ReactNode;
+  type StagaErrorComponent = (props: ErrorProps) => React.ReactNode;
+
+  interface RouteResult {
+    regex: RegExp;
+    params: string[];
+  }
+
+  interface LoaderEventMap {
+    'load:start': void;
+    'load:end': void;
+  }
+
+  declare class LoaderHook extends EventTarget {
+    addEventListener<K extends keyof LoaderEventMap>(
+      type: K,
+      listener: (ev: CustomEvent<void>) => void,
+      options?: boolean | AddEventListenerOptions,
+    ): void;
+
+    removeEventListener<K extends keyof LoaderEventMap>(
+      type: K,
+      listener: (ev: CustomEvent<void>) => void,
+      options?: boolean | EventListenerOptions,
+    ): void;
+  }
+
+  /**
+   * Return `url.location`.
+   */
+  export function useLocation(): string;
+
+  export function useRouter(): {
+    location: string;
+    push: (path: any) => void;
+    replace: (path: any) => void;
+  };
+
+  export function useParams(): {
+    [key: string]: string;
+  };
+
+  /**
+   * Return `url.pathname`.
+   */
+  export function usePathname(): string;
+
+  export function useHash(): string;
+
+  /**
+   * Return `url.searchQuery`.
+   */
+  export function useSearchQuery(): URLSearchParams;
+
+  export interface Router {
+    routes: PageManifest[];
+
+    /**
+     * Layout component
+     */
+    layout: { _page: StagaLayout };
+
+    /**
+     * Error component
+     */
+    error: { _page: StagaErrorComponent };
+
+    /**
+     * Loaded page components
+     */
+    modules: Record<string, any>;
+
+    /**
+     * Loaded page data (`.json`).
+     */
+    data: Map<string, any>;
+
+    hook: LoaderHook;
+
+    constructor(routes: PageManifest[]);
+
+    /**
+     * Preload page module (`.js` file)
+     * ```ts
+     * router.preload(router.findPage("/"));
+     * ```
+     * @param page target page
+     */
+    preload(page: PageManifest): void;
+
+    /**
+     * Preload all page modules
+     */
+    preloadAllPages(): void;
+
+    /**
+     * Load layout component (`_layout.tsx` or default layout)
+     */
+    loadLayout(): Promise<any>;
+
+    /**
+     * Load layout component (`_error.tsx` or default error component)
+     */
+    loadError(): Promise<any>;
+
+    /**
+     * Find page and return page info
+     * @param url target page url
+     */
+    findPage(url: string): PageManifest;
+
+    /**
+     * Load all page modules including layout, error and page component
+     * @param href target url
+     */
+    goto(href: string): Promise<{ modules: any; data: any }>;
+
+    /**
+     * Fetch page data (`.json` file)
+     * @param url target page url
+     */
+    prefetch(url: string): Promise<void>;
+  }
+
+  export const router: Router;
+}
+
+interface Window {
+  __overlay__: {
+    show(text: string, error?: boolean): void;
+    hide(): void;
+    setText(text: string): void;
+  };
+}
