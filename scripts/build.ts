@@ -35,7 +35,7 @@ for (const pkg of buildPkgs) {
     outdir: join(buildBase, './dist'),
     metafile: true,
 
-    external: ['$staga-manifest', '$staga-client', '$staga-router', '$staga-pages'],
+    external: ['$sendary-manifest', '$sendary-client', '$sendary-router', '$sendary-pages'],
 
     jsx: 'automatic',
 
