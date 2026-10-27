@@ -5,14 +5,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 export type IslandHydration = 'load' | 'idle' | 'visible';
 
 export interface IslandProps {
-  /** When this interactive subtree becomes a React root. */
+  /**
+   * When this subtree becomes interactive.
+   * @default 'visible'
+   */
   hydrate?: IslandHydration;
   children: ReactNode;
 }
 
 let islandIndex = 0;
 
-/** @internal Reset once for every independent SSR document render. */
 export function resetIslandCounter() {
   islandIndex = 0;
 }
@@ -62,11 +64,11 @@ function scheduleHydration(
 }
 
 /**
- * Marks a subtree as an independently hydrated React island.
+ * Defers hydration of a subtree until it is needed.
  *
- * Staga renders children to HTML during SSR, then leaves that HTML untouched
- * until the selected strategy runs in the browser. The wrapper is necessary
- * to retain an SSR DOM boundary; it has no styling or layout behaviour.
+ * Children are rendered as static HTML during SSR. The browser turns the
+ * boundary into a separate React root when the selected strategy fires.
+ * https://staga.vercel.app/docs/island
  */
 export function Island({ hydrate = 'visible', children }: IslandProps) {
   const isServer = typeof window === 'undefined';
@@ -76,6 +78,8 @@ export function Island({ hydrate = 'visible', children }: IslandProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<Root | null>(null);
   const hydratedRef = useRef(false);
+  const childrenRef = useRef(children);
+  childrenRef.current = children;
 
   if (isServer) {
     return (
@@ -87,9 +91,6 @@ export function Island({ hydrate = 'visible', children }: IslandProps) {
     );
   }
 
-  // During the initial document hydration, return exactly the HTML that SSR
-  // placed in this boundary. React therefore does not walk the island's child
-  // tree as part of the application root hydration.
   const existing = document.querySelector<HTMLDivElement>(
     `[data-staga-island-id="${id.current}"]`,
   );
@@ -102,21 +103,31 @@ export function Island({ hydrate = 'visible', children }: IslandProps) {
     const start = () => {
       if (hydratedRef.current) return;
       hydratedRef.current = true;
-      rootRef.current = element.hasChildNodes()
-        ? hydrateRoot(element, children)
+
+      const hasContent = element.hasChildNodes();
+      const root = hasContent
+        ? hydrateRoot(element, childrenRef.current)
         : createRoot(element);
 
-      if (!element.hasChildNodes()) rootRef.current.render(children);
+      if (!hasContent) root.render(childrenRef.current);
+      rootRef.current = root;
     };
 
     const cancel = scheduleHydration(element, hydrate, start);
+
     return () => {
       cancel();
       rootRef.current?.unmount();
       rootRef.current = null;
       hydratedRef.current = false;
     };
-  }, [children, hydrate]);
+  }, [hydrate]);
+
+  useEffect(() => {
+    if (hydratedRef.current) {
+      rootRef.current?.render(children);
+    }
+  }, [children]);
 
   return (
     <div
