@@ -1,13 +1,9 @@
 import React from 'react';
 
+/**
+ * Renders a standard `<img>` element.
+ * https://staga.vercel.app/docs/image
+ */
 export function Image({ src, ...props }: React.ComponentPropsWithoutRef<'img'>) {
-  if (typeof window === 'undefined') {
-    // global.__STAGA_SSR_DATA__.preload.push(src);
-  }
-
-  return (
-    <img {...props} src={src}>
-      {props.children}
-    </img>
-  );
+  return <img {...props} src={src} />;
 }

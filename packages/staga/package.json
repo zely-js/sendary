@@ -1,15 +1,15 @@
 {
   "name": "staga",
-  "version": "0.0.1-beta.31",
+  "version": "1.0.0",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/do4ng/staga.git"
+    "url": "git+https://github.com/zely-js/staga.git"
   },
-  "homepage": "https://stagajs.netlify.app",
-  "description": "Static Site Generator",
+  "homepage": "https://staga.vercel.app",
+  "description": "React Static Site Generator",
   "files": [
     "dist",
     "env.d.ts",

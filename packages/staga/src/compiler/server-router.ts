@@ -1,12 +1,7 @@
 /**
- * The implementation injected for `$staga-router` while esbuild compiles the
- * build-only page module.  It deliberately has no browser dependencies: page
- * modules are evaluated by Node while collecting static props, where replacing
- * the module with `{}` used to turn every router import into `undefined`.
- *
- * Keep this as source text because the compiler is shipped as one bundled
- * file. Resolving another file from an esbuild plugin would make the installed
- * package depend on that unbundled file being present next to the compiler.
+ * Server-safe implementation of `$staga-router` used while pages are evaluated
+ * in Node during static generation. Kept as source text because the compiler is
+ * bundled into a single file.
  */
 export const SERVER_ROUTER_MODULE = String.raw`
 import * as React from 'react';

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { join, relative } from 'node:path';
@@ -8,21 +8,21 @@ import { ConfigEnv, Plugin } from 'vite';
 import type { PageManifest } from '$staga-manifest';
 
 import { BaseConfig } from '~/config/types';
-import { initialize } from '~/core';
-import { compilePages, prettyURL } from '~/core/routing';
+import { initialize, writePagesModule } from '~/core';
+import { compilePages } from '~/core/routing';
 import { matchUrlToRoute } from '~/utils/params';
 import {
   PAGE_STATIC_DATA_FUNCTION,
   PAGE_STATIC_PARAMS_FUNCTION,
 } from '~/compiler/constants';
 import { scanDirectory } from '~/utils/fs';
-import { encodeJSON } from '~/utils/url';
+import { encodeJSON, prettyURL } from '~/utils/url';
 import { convertToRegex } from '~/utils/urlPath';
 import { findPage as findPageDev } from '~/utils/find';
 
 import { stagaBuild } from './build';
 import { ServerModule } from './type';
-import { changeExtension } from '~/utils/path';
+import { changeExtension, isSamePath, normalizePath } from '~/utils/path';
 import { debug } from '~/logger';
 
 const manifestModuleId = '$staga-manifest';
@@ -32,14 +32,18 @@ const resolvedClientModuleId = '\0' + clientModuleId;
 const routerModuleId = '$staga-router';
 const resolvedRouterModuleId = '\0' + routerModuleId;
 
+/**
+ * Creates the Vite plugins that compile pages, serve dev data, and build the static site.
+ * https://staga.vercel.app/docs/installation
+ */
 export function staga(options?: BaseConfig): Plugin[] {
   const isDev = process.env.NODE_ENV === 'development';
-  const dist = options?.compileOptions.outdir ?? join(process.cwd(), '.staga');
+  const dist = options?.compileOptions?.outdir ?? join(process.cwd(), '.staga');
   const _manifest_object: PageManifest[] = [];
   const _server_props = new Map<string, any>();
 
-  let _pages: Record<string, { server: string; client: string }>;
-  let _manifest: string = null;
+  let _pages: Record<string, { server: string; client: string; dependencies?: string[] }>;
+  let _manifest: string | null = null;
   let logger: import('vite').Logger;
   let env: ConfigEnv;
 
@@ -53,24 +57,23 @@ export function staga(options?: BaseConfig): Plugin[] {
   ): string {
     if (_manifest && !force) return _manifest;
 
+    _manifest_object.length = 0;
+
     const manifest: string[] = [];
 
-    for (const path in rawManif) {
-      const converted = convertToRegex(path);
-      const relativePath = relative(
-        join(process.cwd(), '.staga'),
-        rawManif[path].client,
-      ).replace(/\\/g, '/');
-      const code = `{path: ${JSON.stringify(path)}, regexp: ${converted.regex.toString()}, params: ${JSON.stringify(converted.params)}, buildPath: ${JSON.stringify(relativePath)}, originalPath: ${JSON.stringify(path)}}`;
+    for (const pagePath in rawManif) {
+      const converted = convertToRegex(pagePath);
+      const relativePath = relative(dist, rawManif[pagePath].client).replace(/\\/g, '/');
+      const code = `{path: ${JSON.stringify(pagePath)}, regexp: ${converted.regex.toString()}, params: ${JSON.stringify(converted.params)}, buildPath: ${JSON.stringify(relativePath)}, originalPath: ${JSON.stringify(pagePath)}}`;
 
       manifest.push(code);
       _manifest_object.push({
-        path,
-        originalPath: path,
+        path: pagePath,
+        originalPath: pagePath,
         regexp: converted.regex,
         params: converted.params,
         buildPath: relativePath,
-        buildServerPath: rawManif[path].server,
+        buildServerPath: rawManif[pagePath].server,
       });
     }
 
@@ -91,7 +94,8 @@ export function staga(options?: BaseConfig): Plugin[] {
         config.server ??= {};
         config.server.watch ??= {};
         config.server.watch.ignored = [
-          '/.staga/**',
+          dist,
+          join(dist, '**'),
           ...(Array.isArray(config.server.watch.ignored)
             ? config.server.watch.ignored
             : config.server.watch.ignored
@@ -112,9 +116,7 @@ export function staga(options?: BaseConfig): Plugin[] {
       },
 
       async handleHotUpdate({ server, file }) {
-        if (file.includes('.staga')) return []; // skip .staga
-
-        const dist = options?.compileOptions?.outdir || join(process.cwd(), '.staga');
+        if (file.includes('.staga')) return [];
 
         _pages = await compilePages(options?.compileOptions);
         _server_props.clear();
@@ -122,23 +124,13 @@ export function staga(options?: BaseConfig): Plugin[] {
         const beforeManifest = `${_manifest}`;
         const afterManifest = generateManifest(_pages, true);
 
-        // when page structure changed
         if (beforeManifest !== afterManifest) {
           server.ws.send({ type: 'full-reload' });
           return [];
         }
 
-        writeFileSync(
-          join(dist, 'manifest.js'),
-          `export default {${Object.keys(_pages)
-            .map(
-              (page) =>
-                `  "${page}": () => import("./${relative(dist, _pages[page].client).replace(/\\/g, '/')}"),\n`,
-            )
-            .join('\n')}}`,
-        );
+        writePagesModule(dist, _pages);
 
-        // helper: invalidate module + trigger HMR
         const invalidateAndUpdate = (modid: any, isVirtual = true) => {
           if (!modid) return;
 
@@ -161,35 +153,69 @@ export function staga(options?: BaseConfig): Plugin[] {
           });
         };
 
-        // update virtual modules
         invalidateAndUpdate(resolvedManifestModuleId);
         invalidateAndUpdate(
           (await server.moduleGraph.getModuleByUrl('$staga-pages'))?.id ?? null,
         );
 
-        // HMR for pages tsx
-        const normalizedFile = file.replace(/\\/g, '/');
+        const targetNormalized = normalizePath(file);
         const pagesDirectory = join(process.cwd(), 'pages');
-        const pagesFiles = scanDirectory(pagesDirectory).map((p) =>
-          p.replace(/\\/g, '/'),
-        );
-        const compiledFile = changeExtension(
-          join(
-            process.cwd(),
-            '.staga',
-            'client',
-            relative(pagesDirectory, normalizedFile),
-          ),
-          '.js',
-        ).replace(/\\/g, '/');
+        const pagesFiles = existsSync(pagesDirectory)
+          ? scanDirectory(pagesDirectory).map((p) => normalizePath(p))
+          : [];
 
-        if (pagesFiles.includes(normalizedFile)) {
-          const modules = Array.from(server.moduleGraph.urlToModuleMap.values()).filter(
-            (mod) => {
-              return mod.file && mod.file.replace(/\\/g, '/') === compiledFile;
-            },
+        // Find all pages affected by the changed file (either directly or via dependencies)
+        const affectedPages: Array<{
+          server: string;
+          client: string;
+          dependencies?: string[];
+        }> = [];
+
+        for (const page of Object.values(_pages)) {
+          if (!page) continue;
+          const isDep = page.dependencies?.some((dep) => isSamePath(dep, file));
+          const isClientOrServer =
+            isSamePath(page.client, file) || isSamePath(page.server, file);
+          if (isDep || isClientOrServer) {
+            affectedPages.push(page);
+          }
+        }
+
+        if (pagesFiles.includes(targetNormalized)) {
+          const compiledFile = changeExtension(
+            join(process.cwd(), '.staga', 'client', relative(pagesDirectory, file)),
+            '.js',
           );
+          for (const page of Object.values(_pages)) {
+            if (page && isSamePath(page.client, compiledFile)) {
+              if (!affectedPages.includes(page)) {
+                affectedPages.push(page);
+              }
+            }
+          }
+        }
 
+        const findModulesByFile = (targetCompiledFile: string) => {
+          const matched = new Set<import('vite').ModuleNode>();
+          const target = normalizePath(targetCompiledFile);
+
+          for (const mod of server.moduleGraph.urlToModuleMap.values()) {
+            if (mod.file && normalizePath(mod.file) === target) {
+              matched.add(mod);
+            }
+          }
+
+          for (const mod of server.moduleGraph.idToModuleMap.values()) {
+            if (mod.file && normalizePath(mod.file) === target) {
+              matched.add(mod);
+            }
+          }
+
+          return Array.from(matched);
+        };
+
+        for (const page of affectedPages) {
+          const modules = findModulesByFile(page.client);
           for (const mod of modules) {
             invalidateAndUpdate(mod.id, false); // HMR update
           }
@@ -199,6 +225,10 @@ export function staga(options?: BaseConfig): Plugin[] {
           `${'[staga]'.gray} ${relative(process.cwd(), file).cyan.bold} updated`,
           {},
         );
+
+        if (affectedPages.length > 0) {
+          return [];
+        }
       },
 
       async buildStart() {
@@ -206,13 +236,15 @@ export function staga(options?: BaseConfig): Plugin[] {
       },
 
       async configureServer(server) {
+        server.watcher.unwatch(dist);
+
         _pages = await compilePages(options?.compileOptions);
 
         initialize(options?.compileOptions?.outdir, _pages);
 
         if (isDev) {
           server.middlewares.use('/.staga/__page_data', async (req, res) => {
-            const url = new URL(req.url, 'http://localhost'); // request url
+            const url = new URL(req.url, 'http://localhost');
             const page = url.searchParams.get('page') || '/';
 
             debug(`Requested "${page}"`);
@@ -221,18 +253,16 @@ export function staga(options?: BaseConfig): Plugin[] {
               return res.end(JSON.stringify({ connected: true }));
             }
 
-            const clientURL = new URL(page, 'http://localhost'); // page url
+            const clientURL = new URL(page, 'http://localhost');
 
             const pageManifest = findPage(page);
             const prettyPathname = prettyURL(decodeURIComponent(clientURL.pathname));
 
             res.setHeader('Content-Type', 'application/json');
 
-            // cannot find server module
             if (!pageManifest?.buildServerPath)
               return res.end(JSON.stringify({ props: {}, status: 404 }));
 
-            // cache static props
             if (_server_props.has(prettyPathname)) {
               return res.end(
                 JSON.stringify({
@@ -244,13 +274,11 @@ export function staga(options?: BaseConfig): Plugin[] {
             }
 
             try {
-              // load client page module
               const moduleUrl = pathToFileURL(pageManifest.buildServerPath).href;
               const serverModule: ServerModule = await import(
                 `${moduleUrl}?v=${Date.now()}`
               );
 
-              // generate params with pathname
               const params = matchUrlToRoute(clientURL.pathname, {
                 regex: pageManifest.regexp,
                 params: pageManifest.params,
@@ -258,29 +286,18 @@ export function staga(options?: BaseConfig): Plugin[] {
 
               let data = {};
 
-              // check is valid path (comparing params)
               if (serverModule[PAGE_STATIC_PARAMS_FUNCTION]) {
                 const availableParams = await serverModule[PAGE_STATIC_PARAMS_FUNCTION]();
 
-                let success = false;
+                const valid = availableParams.some((allowedParams) =>
+                  isDeepStrictEqual(encodeJSON(allowedParams), params),
+                );
 
-                for (const allowedParams of availableParams) {
-                  if (isDeepStrictEqual(encodeJSON(allowedParams), params)) {
-                    success = true;
-                  }
-                }
-
-                if (!success) {
-                  return res.end(
-                    JSON.stringify({
-                      props: {},
-                      status: 404,
-                    }),
-                  );
+                if (!valid) {
+                  return res.end(JSON.stringify({ props: {}, status: 404 }));
                 }
               }
 
-              // execute getStaticProps
               if (serverModule[PAGE_STATIC_DATA_FUNCTION]) {
                 data = await serverModule[PAGE_STATIC_DATA_FUNCTION]({
                   params,

@@ -5,12 +5,13 @@ import { CompileOptions } from '~/config/types';
 import { SERVER_ROUTER_MODULE } from './server-router';
 
 const BUILTIN_MODULES = builtinModules.concat(builtinModules.map((m) => `node:${m}`));
+const DEFAULT_ASSET_EXTENSIONS = ['.css', '.scss', '.sass', '.less'];
 
 export function sideEffectPlugin(options?: CompileOptions): Plugin {
   return {
     name: 'staga/esbuild-sideeffect-plugin',
     setup(build) {
-      build.onResolve({ filter: /.*/ }, async (args) => {
+      build.onResolve({ filter: /.*/ }, (args) => {
         if (
           BUILTIN_MODULES.includes(args.path) ||
           (options?.ignoreSideEffects &&
@@ -28,13 +29,12 @@ export function sideEffectPlugin(options?: CompileOptions): Plugin {
 }
 
 /**
- * Supplies a render-safe `$staga-router` implementation to Node's build-time
- * bundle.  An empty object makes any named router import undefined and causes
- * an opaque "is not a function" failure when a page is rendered or evaluated.
+ * Replaces `$staga-router` with a server-safe implementation while pages are
+ * evaluated by Node during static generation.
  */
 export function vmPlugin(): Plugin {
   return {
-    name: 'my-virtual-module-plugin',
+    name: 'staga/esbuild-router-plugin',
     setup(build) {
       build.onResolve({ filter: /^\$staga-router$/ }, (args) => {
         return { path: args.path, namespace: 'virtual' };
@@ -44,8 +44,6 @@ export function vmPlugin(): Plugin {
         return {
           contents: SERVER_ROUTER_MODULE,
           loader: 'js',
-          // The virtual module imports React. Without a resolve directory,
-          // esbuild cannot look up the consumer project's node_modules.
           resolveDir: process.cwd(),
         };
       });
@@ -53,27 +51,29 @@ export function vmPlugin(): Plugin {
   };
 }
 
-export function onlyReact(
-  extensions: string[] = ['.css', '.scss', '.sass', '.less'],
-  isServerSide: boolean = false,
+/**
+ * Keeps asset imports out of server bundles and marks them external in client bundles.
+ */
+export function assetPlugin(
+  extensions: string[] = DEFAULT_ASSET_EXTENSIONS,
+  ignoreAssets = false,
   options?: CompileOptions,
 ): Plugin {
-  if (options.assetsExtensions) {
-    extensions.push(...options.assetsExtensions);
-  }
+  const allExtensions = options?.assetsExtensions
+    ? [...extensions, ...options.assetsExtensions]
+    : extensions;
 
   return {
-    name: 'staga/esbuild-react-plugin',
+    name: 'staga/esbuild-asset-plugin',
     setup(build) {
       build.onResolve(
         {
           filter: new RegExp(
-            `\\.(${extensions.map((ext) => ext.replace('.', '')).join('|')})$`,
+            `\\.(${allExtensions.map((ext) => ext.replace('.', '')).join('|')})$`,
           ),
         },
-
         (args) => {
-          if (isServerSide) {
+          if (ignoreAssets) {
             return {
               path: args.path,
               namespace: 'staga:ignore',

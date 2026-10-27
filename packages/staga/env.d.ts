@@ -51,7 +51,8 @@ declare module '$staga-router' {
   }
 
   /**
-   * Return `url.location`.
+   * Returns the current location.
+   * https://staga.vercel.app/docs/staga-router
    */
   export function useLocation(): string;
 
@@ -66,37 +67,35 @@ declare module '$staga-router' {
   };
 
   /**
-   * Return `url.pathname`.
+   * Returns `url.pathname`.
    */
   export function usePathname(): string;
 
   export function useHash(): string;
 
   /**
-   * Return `url.searchQuery`.
+   * Returns `url.search` as `URLSearchParams`.
    */
   export function useSearchQuery(): URLSearchParams;
 
+  /**
+   * Client router used by `<Link>` for navigation and data loading.
+   * https://staga.vercel.app/docs/staga-router
+   */
   export interface Router {
     routes: PageManifest[];
 
-    /**
-     * Layout component
-     */
     layout: { _page: StagaLayout };
 
-    /**
-     * Error component
-     */
     error: { _page: StagaErrorComponent };
 
     /**
-     * Loaded page components
+     * Loaded page components.
      */
     modules: Record<string, any>;
 
     /**
-     * Loaded page data (`.json`).
+     * Loaded page data.
      */
     data: Map<string, any>;
 
@@ -105,44 +104,37 @@ declare module '$staga-router' {
     constructor(routes: PageManifest[]);
 
     /**
-     * Preload page module (`.js` file)
-     * ```ts
-     * router.preload(router.findPage("/"));
-     * ```
-     * @param page target page
+     * Preload a page module.
      */
     preload(page: PageManifest): void;
 
     /**
-     * Preload all page modules
+     * Preload every page module.
      */
     preloadAllPages(): void;
 
     /**
-     * Load layout component (`_layout.tsx` or default layout)
+     * Load the layout component.
      */
     loadLayout(): Promise<any>;
 
     /**
-     * Load layout component (`_error.tsx` or default error component)
+     * Load the error component.
      */
     loadError(): Promise<any>;
 
     /**
-     * Find page and return page info
-     * @param url target page url
+     * Find the page that matches a URL.
      */
-    findPage(url: string): PageManifest;
+    findPage(url: string): PageManifest | null;
 
     /**
-     * Load all page modules including layout, error and page component
-     * @param href target url
+     * Load the layout, error page, page module, and static data for a URL.
      */
-    goto(href: string): Promise<{ modules: any; data: any }>;
+    goto(href: string): Promise<{ modules: any; data: any } | undefined>;
 
     /**
-     * Fetch page data (`.json` file)
-     * @param url target page url
+     * Fetch and cache static data for a URL.
      */
     prefetch(url: string): Promise<void>;
   }

@@ -2,10 +2,11 @@ import { PAGES_MANIFEST as manifest, PageManifest } from '$staga-manifest';
 import pages from '$staga-pages';
 import React from 'react';
 import { isSamePathClient, removeExtension } from '~/utils/clientPath';
-import { DefaultLayout } from './components/_layout.';
-import { DefaultError } from './components/_error';
+import { prettyURL } from '~/utils/url';
 import { matchUrlToRoute } from '~/utils/params';
 import { findPage as findPageDev } from '~/utils/find';
+import { DefaultLayout } from './components/_layout.';
+import { DefaultError } from './components/_error';
 
 const isServerSide = typeof window === 'undefined';
 
@@ -19,40 +20,30 @@ declare global {
   }
 }
 
-function prettyURL(path: string): string {
-  if (path === '.') {
-    path = '';
-  }
-  if (!path.startsWith('/')) {
-    path = `/${path}`;
-  }
-  if (path.endsWith('/')) {
-    path = path.slice(0, -1);
-  }
-
-  return path;
-}
-
 export async function loadPageData(page: string): Promise<any> {
   if (import.meta.env.DEV) {
     const res = await fetch(`/.staga/__page_data?page=${page}`);
     return await res.json();
-  } else {
-    const id = staticManifest[page.replace(/\//g, '_') + '.json'];
-    if (id === null) {
-      return { props: {} };
-    } else if (id === undefined) {
-      return { props: {}, status: 404 };
-    }
-    const target = `/data/${id}.json`;
+  }
 
-    try {
-      const res = await fetch(target);
-      return { props: await res.json() };
-    } catch (__e) {
-      console.error(`Cannot find page (fetching ${target}) - ${__e.message}`);
-      return { props: {}, status: 404 };
-    }
+  const id = staticManifest[page.replace(/\//g, '_') + '.json'];
+
+  if (id === null) {
+    return { props: {} };
+  }
+
+  if (id === undefined) {
+    return { props: {}, status: 404 };
+  }
+
+  const target = `/data/${id}.json`;
+
+  try {
+    const res = await fetch(target);
+    return { props: await res.json() };
+  } catch (error) {
+    console.error(`Cannot find page (fetching ${target}) - ${(error as Error).message}`);
+    return { props: {}, status: 404 };
   }
 }
 
@@ -73,13 +64,13 @@ function createHistoryStore() {
   const listeners = new Set<() => void>();
 
   const notify = () => {
-    for (const l of listeners) l();
+    for (const listener of listeners) listener();
   };
 
-  const wrap = (method) => {
+  const wrap = (method: 'pushState' | 'replaceState') => {
     const original = history[method];
-    return function (...args) {
-      original.apply(this, args);
+    return function (...args: Parameters<History['pushState']>) {
+      original.apply(history, args);
       notify();
     };
   };
@@ -90,7 +81,7 @@ function createHistoryStore() {
   window.addEventListener('popstate', notify);
 
   return {
-    subscribe(listener) {
+    subscribe(listener: () => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
@@ -99,19 +90,16 @@ function createHistoryStore() {
         window.location.pathname + window.location.search + window.location.hash,
       );
     },
-    push(path) {
+    push(path: string) {
       if (path.startsWith('#')) {
-        // disable push state when only hash changed
         location.hash = path;
         return;
       }
 
       history.pushState({}, '', path);
-      notify();
     },
-    replace(path) {
+    replace(path: string) {
       history.replaceState({}, '', path);
-      notify();
     },
   };
 }
@@ -133,6 +121,10 @@ function useLocationSelector<T>(selector: (url: string) => T) {
   );
 }
 
+/**
+ * Returns the current pathname, search query, and hash.
+ * https://staga.vercel.app/docs/staga-router
+ */
 export function useLocation() {
   return useLocationSelector((url) => url);
 }
@@ -151,6 +143,7 @@ export function useSearchQuery() {
 
   return React.useMemo(() => new URLSearchParams(search), [search]);
 }
+
 export function useHash() {
   return useLocationSelector((url) => new URL(url, 'http://localhost').hash);
 }
@@ -173,20 +166,23 @@ export function useParams() {
   const page = window._staga_router.findPage(location);
 
   if (!page) {
-    const message = `[staga-router] Cannot generate params: Route match for "${location}" is missing required data.`;
-    throw new Error(message);
+    throw new Error(
+      `[staga-router] Cannot generate params: Route match for "${location}" is missing required data.`,
+    );
   }
 
   return matchUrlToRoute(location, { params: page.params, regex: page.regexp });
 }
 
+/**
+ * Loads page modules and static data for client-side navigation.
+ * https://staga.vercel.app/docs/staga-router
+ */
 export class Router {
   routes: PageManifest[];
 
-  // layout component
   layout: any;
 
-  // error page
   error: any;
 
   modules: Record<string, any> = {};
@@ -203,23 +199,23 @@ export class Router {
   }
 
   async prefetch(url: string) {
-    const _url = prettyURL(url);
-    if (this.data.has(_url)) return;
-    this.data.set(_url, await loadPageData(url));
+    const key = prettyURL(url);
+    if (this.data.has(key)) return;
+    this.data.set(key, await loadPageData(url));
   }
 
-  getHref(page: PageManifest) {
+  getHref(page: PageManifest): string | undefined {
     if (import.meta.env.DEV) {
       return `/.staga/${page.buildPath.replace(/\\/g, '/')}`;
     }
 
-    const windowObject = window.__STAGA_PAGEMAP__;
+    const pageMap = window.__STAGA_PAGEMAP__;
 
-    for (const pageMapKey in windowObject) {
+    for (const pageMapKey in pageMap) {
       if (
         isSamePathClient(removeExtension(pageMapKey), removeExtension(page.originalPath))
       ) {
-        return `/${windowObject[pageMapKey]}`;
+        return `/${pageMap[pageMapKey]}`;
       }
     }
   }
@@ -229,16 +225,16 @@ export class Router {
 
     if (!href) return;
 
-    const preloaded = document.getElementsByTagName('link');
+    const existingLinks = document.getElementsByTagName('link');
 
-    for (const preloadScript of [...preloaded]) {
-      if (preloadScript.href === new URL(href, window.location.origin).href) return;
+    for (const link of [...existingLinks]) {
+      if (link.href === new URL(href, window.location.origin).href) return;
     }
 
-    const preload = document.createElement('link');
-    preload.rel = 'prefetch';
-    preload.href = href;
-    document.head.appendChild(preload);
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = href;
+    document.head.appendChild(link);
   }
 
   preloadAllPages() {
@@ -250,11 +246,9 @@ export class Router {
   async loadLayout() {
     if (this.layout) return this.layout;
 
-    if (!pages['[layout]']) {
-      this.layout = { _page: DefaultLayout };
-    } else {
-      this.layout = await pages['[layout]']();
-    }
+    this.layout = pages['[layout]']
+      ? await pages['[layout]']()
+      : { _page: DefaultLayout };
 
     return this.layout;
   }
@@ -262,18 +256,13 @@ export class Router {
   async loadError() {
     if (this.error) return this.error;
 
-    if (!pages['[error]']) {
-      this.error = { _page: DefaultError };
-    } else {
-      this.error = await pages['[error]']();
-    }
+    this.error = pages['[error]'] ? await pages['[error]']() : { _page: DefaultError };
 
     return this.error;
   }
 
   findPage(url: string) {
-    url = url.toLowerCase();
-    return findPageDev(url, this.routes);
+    return findPageDev(url.toLowerCase(), this.routes);
   }
 
   async goto(href: string) {
@@ -284,31 +273,41 @@ export class Router {
     ).toLowerCase();
     const page = this.findPage(url);
 
-    await this.loadLayout();
-    await this.loadError();
-
     if (!page) {
+      await Promise.all([this.loadLayout(), this.loadError()]);
       this.hook.dispatchEvent(new Event('load:end'));
       return;
     }
 
+    const key = prettyURL(url);
     const pageModule = this.loadedModules.has(page.path)
-      ? this.loadedModules.get(page.path)
-      : this.loadedModules.set(page.path, await pages[page.path]()).get(page.path);
+      ? Promise.resolve(this.loadedModules.get(page.path))
+      : pages[page.path]().then((module) => {
+          this.loadedModules.set(page.path, module);
+          return module;
+        });
+    const data = this.data.has(key)
+      ? Promise.resolve(this.data.get(key))
+      : loadPageData(url).then((pageData) => {
+          this.data.set(key, pageData);
+          return pageData;
+        });
 
-    const _url = prettyURL(url);
-    const data = this.data.has(_url)
-      ? this.data.get(_url)
-      : this.data.set(_url, await loadPageData(url)).get(_url);
+    const [, , loadedModule, loadedData] = await Promise.all([
+      this.loadLayout(),
+      this.loadError(),
+      pageModule,
+      data,
+    ]);
 
-    this.modules[page.path] = pageModule;
+    this.modules[page.path] = loadedModule;
     this.hook.dispatchEvent(new Event('load:end'));
 
-    if (data?.status === 404) {
+    if (loadedData?.status === 404) {
       return;
     }
 
-    return { module: this.modules, data };
+    return { modules: this.modules, data: loadedData };
   }
 }
 

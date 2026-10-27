@@ -4,8 +4,10 @@ import {
   PAGE_STATIC_PARAMS_FUNCTION,
 } from '~/compiler/constants';
 
-// server
-
+/**
+ * Passed to `getStaticProps` while a page is generated.
+ * https://staga.vercel.app/docs/static-props
+ */
 export interface StaticPropsContext {
   params: Record<string, string>;
 }
@@ -22,16 +24,30 @@ export type ServerModule = {
   [PAGE_STATIC_PARAMS_FUNCTION]: StaticParamsFC;
 };
 
-// client
-
+/**
+ * Props received by a page component.
+ */
 export interface PageProps<PropsType = any, ParamsType = Record<string, string>> {
   params: ParamsType;
   props: PropsType;
 }
 
+/**
+ * A page's default export.
+ * https://staga.vercel.app/docs/routing
+ */
 export type StagaPage<PropsType = any, ParamsType = Record<string, string>> = (
   props: PageProps<PropsType, ParamsType>,
 ) => React.ReactNode;
 
+/**
+ * A layout component from `_layout.tsx`.
+ * https://staga.vercel.app/docs/layout-404
+ */
 export type StagaLayout = (props: { children: React.ReactNode }) => React.ReactNode;
+
+/**
+ * An error component from `_error.tsx`.
+ * https://staga.vercel.app/docs/layout-404
+ */
 export type StagaErrorComponent = (props: ErrorProps) => React.ReactNode;

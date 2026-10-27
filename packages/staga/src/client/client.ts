@@ -3,34 +3,20 @@ import ReactDOM from 'react-dom/client';
 
 import { router, usePathname, useSearchQuery } from '$staga-router';
 import { matchUrlToRoute } from '~/utils/params';
+import { prettyURL } from '~/utils/url';
 import { hide, show } from './overlay';
 import ErrorBoundary, { ErrorBoundaryProps } from './components/error';
-
-function prettyURL(path: string): string {
-  if (path === '.') {
-    path = '';
-  }
-  if (!path.startsWith('/')) {
-    path = `/${path}`;
-  }
-  if (path.endsWith('/')) {
-    path = path.slice(0, -1);
-  }
-
-  return path;
-}
 
 function App() {
   const isFirstRender = useRef(true);
   const location = usePathname();
   const search = useSearchQuery();
   const url = decodeURIComponent(new URL(location, window.location.origin).pathname);
-  const props = router.data.get(prettyURL(url).toLowerCase());
+  const pageData = router.data.get(prettyURL(url).toLowerCase());
   const page = router.findPage(url);
   const Layout = router.layout._page;
   const rootElement = document.getElementById('_app');
 
-  // Reset Window on page moving
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -40,7 +26,6 @@ function App() {
     if (rootElement) rootElement.scrollTo({ top: 0, behavior: 'instant' });
   }, [location, search]);
 
-  // Error Component
   const createError = (props: any) =>
     React.createElement(
       Layout,
@@ -51,19 +36,17 @@ function App() {
       }),
     );
 
-  if (!page || props?.status === 404) {
-    // 404 page
-
+  if (!page || pageData?.status === 404) {
     return createError({
       key: location,
       status: 404,
       message: 'Page not found',
       detail: `page: ${JSON.stringify(page)}, loc: ${url}`,
     });
-  } else if (props?.status === 500) {
-    // 500 page
+  }
 
-    show(`ERROR: ${props.detail}`, true);
+  if (pageData?.status === 500) {
+    show(`ERROR: ${pageData.detail}`, true);
     return createError({
       key: location,
       status: 500,
@@ -71,40 +54,38 @@ function App() {
     });
   }
 
-  if (!router.modules[page.path]?._page) {
+  const Page = router.modules[page.path]?._page;
+
+  if (!Page) {
     console.error(`Cannot find page module (path: ${page.path})`);
+    return createError({
+      key: location,
+      status: 500,
+      message: 'Page module not found',
+    });
   }
 
-  const Page = router.modules[page.path]._page;
   const params = matchUrlToRoute(url, { params: page.params, regex: page.regexp });
 
   return React.createElement(
     Layout,
     null,
-    React.createElement(Page, { key: location, ...props, params }),
+    React.createElement(Page, { key: location, ...pageData, params }),
   );
 }
 
-// router.preloadAllPages();
+let compilingInterval: ReturnType<typeof setInterval>;
 
-let compilingInterval: any;
-
-// compilation status overlay
 if (import.meta.env.DEV) {
-  let intervalIndex = 0;
+  let dots = 1;
   compilingInterval = setInterval(() => {
-    if (intervalIndex * 250 >= 250) {
-      const num = (intervalIndex % 3) + 1;
-      show(`compiling${'.'.repeat(num)}`);
-    }
-
-    intervalIndex += 1;
+    show(`compiling${'.'.repeat(dots)}`);
+    dots = (dots % 3) + 1;
   }, 250);
 }
 
 router.goto(window.location.href).then(() => {
   const mainComponent = React.createElement(
-    // Error Catcher
     ErrorBoundary,
     {
       errorComponent: router.error._page,
@@ -119,18 +100,13 @@ router.goto(window.location.href).then(() => {
     } as ErrorBoundaryProps,
     React.createElement(App, null),
   );
-  if (import.meta.env.PROD) {
-    // on Production Mode
-    // SSR hydration
 
+  if (import.meta.env.PROD) {
     ReactDOM.hydrateRoot(document.getElementById('_app'), mainComponent);
   } else {
-    // on Development Mode
-    // just rendering
     const root = ReactDOM.createRoot(document.getElementById('_app'));
     root.render(mainComponent);
 
-    // clear overlay
     clearInterval(compilingInterval);
     hide();
   }

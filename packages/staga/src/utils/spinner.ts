@@ -50,7 +50,7 @@ class Spinner {
     if (this.processor) {
       clearInterval(this.processor);
       this.clearLine();
-      stream.write(message);
+      stream.write(`${message}\n`);
     }
 
     return this;

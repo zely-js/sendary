@@ -9,16 +9,14 @@ import { ViteDevServer, Manifest } from 'vite';
 
 import { DefaultError } from '~/client/components/_error';
 import { DefaultLayout } from '~/client/components/_layout.';
-import { PAGE_STATIC_PARAMS_FUNCTION } from '~/compiler/constants';
 import { compilePages } from '~/core/routing';
-import { matchUrlToRoute } from '~/utils/params';
 import { changeExtension } from '~/utils/path';
-import { convertToRegex } from '~/utils/urlPath';
-import { replaceParamsInRoute } from './shared';
-import { StagaErrorComponent, StagaLayout, StagaPage } from '../type';
 import { Spinner } from '~/utils/spinner';
 import { getUniqueArray } from '~/utils/array';
 import { resetIslandCounter } from '~/components/Island';
+import { StagaErrorComponent, StagaLayout, StagaPage } from '../type';
+
+import { getStaticParams, replaceParamsInRoute } from './shared';
 
 const fileRegexp = /^[^/\\]+[\\/]/;
 
@@ -40,9 +38,13 @@ export function parsePathname(url: string) {
   return pathname;
 }
 
-// collect vite css dependencies
-export function collectCssFiles(manifest: Manifest, entry: string): string[] {
-  const result: string[] = [];
+function collectChunkFiles(
+  manifest: Manifest,
+  entry: string,
+  select: (chunk: any) => string | string[] | undefined,
+  importsFirst = false,
+): string[] {
+  const result = new Set<string>();
   const visited = new Set<string>();
 
   function recurse(key: string) {
@@ -52,51 +54,51 @@ export function collectCssFiles(manifest: Manifest, entry: string): string[] {
     const chunk = manifest[key];
     if (!chunk) return;
 
-    if (chunk.css) {
-      result.push(...chunk.css);
-    }
-
-    if (chunk.imports) {
-      for (const imported of chunk.imports) {
-        recurse(imported);
+    const add = () => {
+      const selected = select(chunk);
+      if (!selected) return;
+      for (const file of Array.isArray(selected) ? selected : [selected]) {
+        result.add(file);
       }
-    }
-  }
+    };
 
-  recurse(entry);
-  return result;
-}
-
-// collect vite js dependencies
-export function collectJavaScriptFiles(manifest: Manifest, entry: string): string[] {
-  const result = new Set<string>();
-  const visited = new Set<string>();
-
-  function recurse(key: string) {
-    if (visited.has(key)) {
-      return;
-    }
-    visited.add(key);
-
-    const chunk = manifest[key];
-    if (!chunk) {
-      return;
-    }
-
-    if (chunk.imports) {
-      for (const importedKey of chunk.imports) {
-        recurse(importedKey);
-      }
-    }
-
-    result.add(chunk.file);
+    if (!importsFirst) add();
+    for (const imported of chunk.imports ?? []) recurse(imported);
+    if (importsFirst) add();
   }
 
   recurse(entry);
   return [...result];
 }
 
-// render page on server side
+export function collectCssFiles(manifest: Manifest, entry: string): string[] {
+  return collectChunkFiles(manifest, entry, (chunk) => chunk.css);
+}
+
+export function collectJavaScriptFiles(manifest: Manifest, entry: string): string[] {
+  return collectChunkFiles(manifest, entry, (chunk) => chunk.file, true);
+}
+
+function readStaticProps(
+  outdir: string,
+  staticManifest: Record<string, string | null>,
+  route: string,
+) {
+  const key = route.replace(/\//g, '_') + '.json';
+  const file = changeExtension(
+    join(outdir, 'data', staticManifest[key] || '_empty'),
+    '.json',
+  );
+
+  return JSON.parse(readFileSync(file, 'utf-8'));
+}
+
+function getHtmlOutput(outdir: string, route: string, params: boolean) {
+  return params
+    ? changeExtension(join(outdir, route), '.html')
+    : join(outdir, route, 'index.html');
+}
+
 export const serverRendering = (
   children: any,
   { Layout, props, template, cssFiles, staticManifest, path, scripts }: SSRProps,
@@ -114,39 +116,37 @@ export const serverRendering = (
     key: path,
   });
   const string = renderToString(React.createElement(Layout, null, component));
+  const insert: string[] = [];
 
-  const insert = [];
-
-  // stylesheet assets from vite entrypoints
   for (const cssChunk of cssFiles) {
     insert.push(`<link rel="stylesheet" href="/${cssChunk}" />`);
   }
 
-  // prefetch request from development stage
   for (const preloadFile of global.__STAGA_SSR_DATA__.preload) {
     insert.push(`<link rel="prefetch" href="${preloadFile}" />`);
   }
 
-  // scripts for corresponding page
   for (const script of scripts) {
     insert.push(`<link rel="modulepreload" href="/${script}"></link>`);
   }
 
-  // static props link
   insert.push(
     `<script id="__STATIC_MANIFEST__" type="application/json">${JSON.stringify(staticManifest)}</script>`,
   );
 
-  // From (<Head />)
+  const currentPageData = staticManifest[path.replace(/\//g, '_') + '.json'];
+  if (currentPageData) {
+    insert.push(
+      `<link rel="preload" href="/data/${currentPageData}.json" as="fetch"></link>`,
+    );
+  }
 
   for (const head of global.__STAGA_SSR_DATA__.head) {
     switch (head.type) {
-      // raw html
       case 'html':
         insert.push(head.data);
         break;
 
-      // module preload
       case 'preload-data-link': {
         const page = parsePathname(head.data).replace(/\//g, '_') + '.json';
         if (staticManifest[page]) {
@@ -165,12 +165,17 @@ export const serverRendering = (
   }
 
   template = template.replace(/<head[^>]*>([\s\S]*?)<\/head>/, (match, inner) => {
-    return `<head${match.match(/<head([^>]*)>/)?.[1] || ''}>${insert.join('')}\n${inner}</head>`;
+    const attributes = match.match(/<head([^>]*)>/)?.[1] || '';
+    return `<head${attributes}>${insert.join('')}\n${inner}</head>`;
   });
 
   return template.replace('<div id="_app"></div>', `<div id="_app">${string}</div>`);
 };
 
+/**
+ * Renders every compiled page to HTML and writes the static output.
+ * https://staga.vercel.app/docs/build-app
+ */
 export async function createStaticHTML(
   pages: Awaited<ReturnType<typeof compilePages>>,
   outdir: string,
@@ -185,19 +190,16 @@ export async function createStaticHTML(
   spinner.message = 'Generating html files...';
   spinner.start();
 
-  // load layout component (/pages/_layout or default layout)
   const getLayout = async (): Promise<StagaLayout> => {
     if (!pages['[layout]']) return DefaultLayout;
     return (await vite.ssrLoadModule(pages['[layout]'].client))._page;
   };
 
-  // load error component (/pages/_error or default layout)
   const getError = async (): Promise<StagaErrorComponent> => {
     if (!pages['[error]']) return DefaultError;
     return (await vite.ssrLoadModule(pages['[error]'].client))._page;
   };
 
-  // load page component
   const getClientComponent = async (path: string): Promise<StagaPage> => {
     return (await vite.ssrLoadModule(path))._page;
   };
@@ -205,112 +207,76 @@ export async function createStaticHTML(
   const ErrorComponent = await getError();
   const Layout = await getLayout();
 
-  const layoutCompiledFile =
-    `.staga/${pages['[layout]'].client.replace(fileRegexp, '')}`.replace(/\\/g, '/');
-  const layoutCss = pages['[layout]']
+  const layoutCompiledFile = pages['[layout]']
+    ? `.staga/${pages['[layout]'].client.replace(fileRegexp, '')}`.replace(/\\/g, '/')
+    : null;
+  const layoutCss = layoutCompiledFile
     ? collectCssFiles(manifest, layoutCompiledFile)
     : [];
-  const layoutScript = manifest[layoutCompiledFile]?.file;
+  const layoutScript = layoutCompiledFile
+    ? manifest[layoutCompiledFile]?.file
+    : undefined;
 
+  mkdirSync(join(outdir, 'data'), { recursive: true });
   writeFileSync(join(outdir, 'data', '_empty.json'), '{}');
 
   for (const pageName in pages) {
     const page = pages[pageName];
-    const moduleUrl = pathToFileURL(page.server).href;
-    const data = await import(moduleUrl);
+    const data = await import(pathToFileURL(page.server).href);
+    const paramsList = await getStaticParams(
+      pageName,
+      data,
+      'An error occurred while generating HTML file. - Static params function must return array.',
+    );
+
+    if (!paramsList && pageName.startsWith('[') && pageName.endsWith(']')) {
+      continue;
+    }
+
     const compiledFile = `.staga/${page.client.replace(fileRegexp, '')}`.replace(
       /\\/g,
       '/',
     );
     const cssFiles = collectCssFiles(manifest, compiledFile);
-    const script = collectJavaScriptFiles(manifest, compiledFile);
+    const scripts = collectJavaScriptFiles(manifest, compiledFile);
+    const Client = await getClientComponent(page.client);
 
-    if (data[PAGE_STATIC_PARAMS_FUNCTION]) {
-      const paramsModule = await data[PAGE_STATIC_PARAMS_FUNCTION]();
-
-      if (!Array.isArray(paramsModule)) {
-        throw new Error(
-          `An error occurred while generating HTML file. - Static params function must return array. (in ${pageName})`,
-        );
-      }
-
-      for (const params of paramsModule) {
-        const route = replaceParamsInRoute(pageName, params);
-        const outStaticPage = changeExtension(join(outdir, route), '.html');
-        const staticDataPath = changeExtension(
-          join(
-            outdir,
-            'data',
-            staticManifest[route.replace(/\//g, '_') + '.json'] || '_empty',
-          ),
-          '.json',
-        );
-
-        spinner.message = `Generating html files... - ${route}`;
-
-        const Client = await getClientComponent(page.client);
-
-        const ssrProps: SSRProps = {
-          Layout,
-          props: {
-            props: JSON.parse(readFileSync(staticDataPath).toString()),
-            params: matchUrlToRoute(route, convertToRegex(pageName)),
-          },
-          template,
-          cssFiles: getUniqueArray([...cssFiles, ...layoutCss]),
-          staticManifest,
-          path: route,
-          scripts: getUniqueArray([layoutScript, ...script]),
-        };
-
-        mkdirSync(dirname(outStaticPage), { recursive: true });
-        writeFileSync(outStaticPage, serverRendering(Client, ssrProps));
-      }
-    } else {
-      if (pageName.startsWith('[') && pageName.endsWith(']')) continue;
-
-      const route = replaceParamsInRoute(pageName, {});
-      const outStaticPage = join(outdir, route) + '/index.html';
-      const staticDataPath = changeExtension(
-        join(
-          outdir,
-          'data',
-          staticManifest[route.replace(/\//g, '_') + '.json'] || '_empty',
-        ),
-        '.json',
-      );
+    for (const params of paramsList ?? [null]) {
+      const route = replaceParamsInRoute(pageName, params ?? {});
+      const outStaticPage = getHtmlOutput(outdir, route, Boolean(paramsList));
 
       spinner.message = `Generating html files... - ${route}`;
-
-      const Client = await getClientComponent(page.client);
 
       const ssrProps: SSRProps = {
         Layout,
         props: {
-          props: JSON.parse(readFileSync(staticDataPath).toString()),
-          params: {},
+          props: readStaticProps(outdir, staticManifest, route),
+          params: params ?? {},
         },
         template,
         cssFiles: getUniqueArray([...cssFiles, ...layoutCss]),
         staticManifest,
         path: route,
-        scripts: getUniqueArray([layoutScript, ...script]),
+        scripts: getUniqueArray([layoutScript, ...scripts].filter(Boolean)),
       };
 
       mkdirSync(dirname(outStaticPage), { recursive: true });
       writeFileSync(outStaticPage, serverRendering(Client, ssrProps));
     }
   }
-  const ssrProps: SSRProps = {
+
+  const errorProps: SSRProps = {
     Layout,
     props: {},
     template,
-    cssFiles: [...layoutCss],
+    cssFiles: layoutCss,
     staticManifest,
     path: '.staga/ssr:unknown',
     scripts: [],
   };
-  writeFileSync(join(outdir, '404.html'), serverRendering(ErrorComponent, ssrProps));
+
+  writeFileSync(join(outdir, '404.html'), serverRendering(ErrorComponent, errorProps));
+
   spinner.stop(
     `html files generated. (${((performance.now() - startTime) / 1000).toFixed(2)}s)`,
   );

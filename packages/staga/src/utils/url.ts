@@ -1,4 +1,17 @@
-// encode object values using `encodeURIComponent`
+export function prettyURL(path: string): string {
+  if (path === '.') {
+    path = '';
+  }
+  if (!path.startsWith('/')) {
+    path = `/${path}`;
+  }
+  if (path.endsWith('/')) {
+    path = path.slice(0, -1);
+  }
+
+  return path;
+}
+
 export function encodeJSON<T>(input: T): T {
   if (typeof input === 'string') {
     try {

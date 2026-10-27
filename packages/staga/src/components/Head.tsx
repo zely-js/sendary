@@ -1,35 +1,33 @@
-import { ReactElement, useEffect, cloneElement } from 'react';
+import { Children, ReactElement, cloneElement, useEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+/**
+ * Adds elements to the document head during SSR and updates them on the client.
+ * https://staga.vercel.app/docs/head
+ */
 export function Head({ children }: { children: ReactElement | ReactElement[] }) {
-  const isServer = typeof window === 'undefined';
+  if (typeof window === 'undefined') {
+    if (!global.__STAGA_SSR_DATA__) return null;
 
-  if (isServer) {
-    if (global.__STAGA_SSR_DATA__) {
-      const wrapped = Array.isArray(children)
-        ? children.map((c, i) =>
-            cloneElement(c, { ...({ 'data-ssr-head': '', key: i } as any) }),
-          )
-        : cloneElement(children as React.ReactElement<any>, {
-            ...({ 'data-ssr-head': '' } as any),
-          });
+    const marked = Children.map(children, (child, index) =>
+      cloneElement(child, { 'data-ssr-head': '', key: index } as any),
+    );
 
-      global.__STAGA_SSR_DATA__.head.push({
-        type: 'html',
-        data: renderToStaticMarkup(wrapped).replace(/data-ssr-head=""/g, 'data-ssr-head'),
-      });
-    }
+    global.__STAGA_SSR_DATA__.head.push({
+      type: 'html',
+      data: renderToStaticMarkup(marked),
+    });
+
     return null;
   }
 
   useEffect(() => {
     document.head
       .querySelectorAll('[data-ssr-head]')
-      .forEach((el) => el.parentNode?.removeChild(el));
+      .forEach((element) => element.parentNode?.removeChild(element));
 
-    const html = renderToStaticMarkup(children);
     const template = document.createElement('template');
-    template.innerHTML = html;
+    template.innerHTML = renderToStaticMarkup(children);
     const nodes = Array.from(template.content.childNodes);
 
     nodes.forEach((node) => document.head.appendChild(node));

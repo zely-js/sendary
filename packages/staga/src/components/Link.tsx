@@ -4,11 +4,11 @@ type AnchorBaseProps = Omit<React.ComponentPropsWithoutRef<'a'>, 'href' | 'onCli
   href: string;
 
   /**
-   * Download the data for that page in advance.
+   * Fetch the target page's data before navigating. Enabled by default.
    */
   prefetch?: boolean;
   /**
-   * Load page data from the SSR stage.
+   * Preload the target page's data during SSR.
    */
   preload?: boolean;
   onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void | Promise<void>;
@@ -23,14 +23,26 @@ function isExternal(url: string): boolean {
   }
 }
 
-export function Link({ href, onClick, prefetch, preload, ...props }: AnchorBaseProps) {
+/**
+ * Anchor that navigates between pages without a full reload.
+ * https://staga.vercel.app/docs/link
+ */
+export function Link({
+  href,
+  onClick,
+  prefetch,
+  preload,
+  children,
+  ...props
+}: AnchorBaseProps) {
   if (typeof window === 'undefined') {
     if (preload) {
-      global.__STAGA_SSR_DATA__.head.push({ type: 'preload-data-link', data: href });
+      global.__STAGA_SSR_DATA__?.head.push({ type: 'preload-data-link', data: href });
     }
+
     return (
       <a {...props} href={href}>
-        {props.children}
+        {children}
       </a>
     );
   }
@@ -47,7 +59,6 @@ export function Link({ href, onClick, prefetch, preload, ...props }: AnchorBaseP
   const handleClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (e.defaultPrevented) return;
 
-    // modifier / new tab
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || props.target === '_blank') {
       return;
     }
@@ -59,7 +70,6 @@ export function Link({ href, onClick, prefetch, preload, ...props }: AnchorBaseP
     const isSamePath = target.pathname === current.pathname;
     const isHashChange = target.hash && target.hash !== current.hash;
 
-    // hash change
     if (isHashOnly || (isSamePath && isHashChange)) {
       return;
     }
@@ -83,7 +93,7 @@ export function Link({ href, onClick, prefetch, preload, ...props }: AnchorBaseP
 
   return (
     <a {...props} href={href} onClick={handleClick}>
-      {props.children}
+      {children}
     </a>
   );
 }

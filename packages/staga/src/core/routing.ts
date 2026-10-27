@@ -1,31 +1,33 @@
 import { join, parse, relative } from 'node:path';
-import { compilePage } from '~/compiler';
+import { CompileTarget, compilePageBatch } from '~/compiler';
 import { CompileOptions } from '~/config/types';
 import { scanDirectory } from '~/utils/fs';
+import { prettyURL } from '~/utils/url';
 
-export function prettyURL(path: string): string {
-  if (path === '.') {
-    path = '';
-  }
-  if (!path.startsWith('/')) {
-    path = `/${path}`;
-  }
-  if (path.endsWith('/')) {
-    path = path.slice(0, -1);
-  }
-
-  return path;
-}
-
+/**
+ * Compiles every page under `<cwd>/pages` and maps each route to its client and server modules.
+ * https://staga.vercel.app/docs/routing
+ */
 export async function compilePages(
   compileOptions?: CompileOptions,
   ignoreAssets: boolean = false,
-): Promise<Record<string, { server: string; client: string }>> {
+  target: CompileTarget = 'all',
+): Promise<Record<string, { server: string; client: string; dependencies?: string[] }>> {
   const baseDir = join(process.cwd(), 'pages');
   const pages = scanDirectory(baseDir);
-  const output = {};
+  const output: Record<
+    string,
+    { server: string; client: string; dependencies?: string[] }
+  > = {};
 
-  for await (const page of pages) {
+  const compiledPages = await compilePageBatch(
+    pages,
+    compileOptions,
+    ignoreAssets,
+    target,
+  );
+
+  for (const page of pages) {
     const pageName = parse(page).name;
     let name = prettyURL(relative(baseDir, page).replace(/\\/g, '/'));
 
@@ -35,7 +37,7 @@ export async function compilePages(
       name = '[error]';
     }
 
-    output[name] = (await compilePage(page, compileOptions, ignoreAssets)).outfiles;
+    output[name] = compiledPages[page];
   }
 
   return output;

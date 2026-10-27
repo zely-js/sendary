@@ -1,21 +1,17 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-let cache;
+let cache: { cwd: string; html: string } | null = null;
 
 export function getIndexHtml(): string {
-  if (cache) {
-    return cache;
-  }
+  const cwd = process.cwd();
 
-  const path = join(process.cwd(), 'index.html');
+  if (cache?.cwd === cwd) return cache.html;
 
-  if (existsSync(path)) {
-    cache = readFileSync(path, 'utf-8');
-    return cache;
-  }
-
-  return `<!doctype html>
+  const path = join(cwd, 'index.html');
+  const html = existsSync(path)
+    ? readFileSync(path, 'utf-8')
+    : `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -26,4 +22,8 @@ export function getIndexHtml(): string {
     %body%
   </body>
 </html>`;
+
+  cache = { cwd, html };
+
+  return html;
 }

@@ -1,22 +1,89 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, parse, relative } from 'node:path';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { extname, join, parse, relative } from 'node:path';
 
 import { createServer, Manifest, Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 
 import { initialize } from '~/core';
 import { compilePages } from '~/core/routing';
-import { changeExtension } from '~/utils/path';
 import { CompileOptions } from '~/config/types';
+import { scanDirectory } from '~/utils/fs';
 
 import { createStaticHTML } from './builder/ssr';
 import { createStaticProps } from './builder/props';
 
+function getFilesizeInBytes(filename: string) {
+  return existsSync(filename) ? statSync(filename).size : undefined;
+}
+
+function formatFilesize(bytes: number) {
+  if (bytes === 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** unit;
+
+  return `${value.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
+}
+
+function getStaticRoute(staticFile: string) {
+  const route = staticFile.slice(0, -extname(staticFile).length).replace(/_/g, '/');
+  return route === '/' ? '/' : route || '/';
+}
+
+export function createBuildSummary(
+  outDir: string,
+  staticManifest: Record<string, string | null>,
+) {
+  const sizes = { html: 0, javascript: 0, css: 0, data: 0, other: 0 };
+  let files = 0;
+
+  for (const file of scanDirectory(outDir)) {
+    const size = getFilesizeInBytes(file) ?? 0;
+    const extension = extname(file).toLowerCase();
+    files += 1;
+
+    if (extension === '.html') sizes.html += size;
+    else if (extension === '.js' || extension === '.mjs') sizes.javascript += size;
+    else if (extension === '.css') sizes.css += size;
+    else if (file.startsWith(join(outDir, 'data'))) sizes.data += size;
+    else sizes.other += size;
+  }
+
+  const total = Object.values(sizes).reduce((sum, size) => sum + size, 0);
+  const rows = Object.keys(staticManifest)
+    .filter((staticFile) => !staticFile.startsWith('[layout]'))
+    .filter((staticFile) => !staticFile.startsWith('[error]'))
+    .sort()
+    .map((staticFile) => {
+      const id = staticManifest[staticFile];
+      const dataFile = id ? join(outDir, 'data', `${id}.json`) : null;
+      const dataSize = dataFile ? (getFilesizeInBytes(dataFile) ?? 0) : 0;
+      const label = id ? formatFilesize(dataSize) : '—';
+
+      return `  ${getStaticRoute(staticFile).padEnd(46)}${label}`;
+    });
+
+  return [
+    'Staga Build Summary',
+    `${files} files · ${formatFilesize(total)}`,
+    '',
+    `  HTML       ${formatFilesize(sizes.html)}`,
+    `  JavaScript ${formatFilesize(sizes.javascript)}`,
+    `  CSS        ${formatFilesize(sizes.css)}`,
+    `  Data       ${formatFilesize(sizes.data)}`,
+    `  Other      ${formatFilesize(sizes.other)}`,
+    '',
+    `Static data (${rows.length} routes)`,
+    ...(rows.length ? rows : ['  No static data']),
+  ].join('\n');
+}
+
 export function stagaBuild(compilerOptions: CompileOptions = {}): Plugin {
   let viteConfig: ResolvedConfig;
 
-  const pageMap = {};
+  const pageMap: Record<string, string> = {};
 
-  let pages;
+  let pages: Awaited<ReturnType<typeof compilePages>>;
   let vite: ViteDevServer;
   let staticManifest: Record<string, string | null>;
 
@@ -74,17 +141,11 @@ export function stagaBuild(compilerOptions: CompileOptions = {}): Plugin {
       viteConfig = config;
     },
 
-    async buildStart() {},
-
     async generateBundle(options, bundle) {
       pages = await compilePages({ ...compilerOptions, outdir: viteConfig.build.outDir });
       initialize(viteConfig.build.outDir, pages);
 
-      console.log();
-      console.log();
-
       staticManifest = await createStaticProps(pages, viteConfig.build.outDir);
-      console.log();
 
       writeFileSync(
         join(viteConfig.build.outDir, 'map.json'),
@@ -99,12 +160,12 @@ export function stagaBuild(compilerOptions: CompileOptions = {}): Plugin {
       pages = await compilePages(
         { ...compilerOptions, outdir: viteConfig.build.outDir },
         true,
+        'client',
       );
 
       const manifestPath = join(outDir, '.vite/manifest.json');
       const manifest: Manifest = JSON.parse(readFileSync(manifestPath).toString());
 
-      console.log();
       await createStaticHTML(
         pages,
         viteConfig.build.outDir,
@@ -122,36 +183,15 @@ export function stagaBuild(compilerOptions: CompileOptions = {}): Plugin {
       rmSync(join(outDir, 'server'), { recursive: true, force: true });
       rmSync(join(outDir, 'client'), { recursive: true, force: true });
 
-      // build summary
-      // run : BUILD_SUMMARY=true vite build
       if (process.env.BUILD_SUMMARY) {
-        const buildSummary = [];
-
-        buildSummary.push('Build Summary');
-
-        for (const staticFile in staticManifest) {
-          const filename = changeExtension(staticFile.replace(/_/g, '/'), '');
-
-          if (!staticManifest[staticFile]) {
-            buildSummary.push(`${filename}`);
-            continue;
-          }
-          buildSummary.push(
-            `${filename.padEnd(60)}${`${staticManifest[staticFile] || 'null'}.json`}`,
-          );
-        }
-
-        writeFileSync(join(__dirname, '../summary.txt'), buildSummary.join('\n'));
-        console.log(
-          `\nCheck the ${join(__dirname, '../summary.txt')} file to view the build summary.`,
-        );
+        console.log(createBuildSummary(outDir, staticManifest));
       }
       console.log();
     },
 
     transformIndexHtml(html) {
       return {
-        html,
+        html: html,
         tags: [
           {
             tag: 'script',

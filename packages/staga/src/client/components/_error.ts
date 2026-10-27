@@ -26,7 +26,9 @@ export const DefaultError = ({ status, message, detail }: ErrorProps = defaultPr
   status = status ?? defaultProps.status;
   message = message ?? defaultProps.message;
 
-  console.error(`[status: ${status}] ${message} (detail: ${detail})`);
+  if (typeof window !== 'undefined') {
+    console.error(`[status: ${status}] ${message} (detail: ${detail})`);
+  }
 
   return React.createElement('div', { style: containerStyle }, [
     React.createElement('h1', { key: 'status' }, String(status)),
