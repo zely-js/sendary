@@ -1,15 +1,15 @@
+import type { ReactNode } from 'react';
+
 import { Link } from 'staga/components';
 
-export default function ({ children }) {
+export default function Layout({ children }: { children: ReactNode }) {
   return (
     <>
       <nav>
-        <Link href="/">Home</Link>
-        <Link href="/post/1">Post 1</Link>
-        <Link href="/post/2">Post 2</Link>
+        <Link href="/">Home</Link> <Link href="/post/hello">Example post</Link>
       </nav>
 
-      <div>{children}</div>
+      <main>{children}</main>
     </>
   );
 }

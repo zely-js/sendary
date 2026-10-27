@@ -1,0 +1,6 @@
+node_modules
+dist
+.staga
+.exta
+*.log
+.DS_Store
