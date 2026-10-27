@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig/tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./types/",
+    "paths": {
+      "~/*": ["../create-sendary/src/*"]
+    },
+    "types": ["@types/node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

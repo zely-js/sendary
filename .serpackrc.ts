@@ -8,7 +8,7 @@ export default defineConfig({
         configFile: join(
           process.cwd(),
           './packages/',
-          process.argv.find((value) => value.startsWith('$'))?.slice(1) || 'staga',
+          process.argv.find((value) => value.startsWith('$'))?.slice(1) || 'sendary',
           'tsconfig.json',
         ),
       },

@@ -14,13 +14,13 @@
 /* D:\nudo\scripts\build.ts */ "0": (function(__serpack_require__,__non_serpack_require__,module,exports) { Object.defineProperty(exports, "__esModule", {
   value: !0
 });
-const e = __serpack_require__("esbuild"), t = __serpack_require__("esbuild-node-externals"), r = __serpack_require__("node:fs"), n = (function (e, t) {
+const e = __serpack_require__("esbuild"), r = __serpack_require__("esbuild-node-externals"), t = __serpack_require__("node:fs"), n = (function (e, r) {
   if (e && e.__esModule) return e;
   if (null === e || "object" != typeof e && "function" != typeof e) return {
     default: e
   };
-  var r = c(t);
-  if (r && r.has(e)) return r.get(e);
+  var t = c(r);
+  if (t && t.has(e)) return t.get(e);
   var n = {
     __proto__: null
   }, o = Object.defineProperty && Object.getOwnPropertyDescriptor;
@@ -28,23 +28,23 @@ const e = __serpack_require__("esbuild"), t = __serpack_require__("esbuild-node-
     var s = o ? Object.getOwnPropertyDescriptor(e, i) : null;
     s && (s.get || s.set) ? Object.defineProperty(n, i, s) : n[i] = e[i];
   }
-  return (n.default = e, r && r.set(e, n), n);
+  return (n.default = e, t && t.set(e, n), n);
 })(__serpack_require__("glob")), o = __serpack_require__("node:path"), i = __serpack_require__('sp:1');
 function c(e) {
   if ("function" != typeof WeakMap) return null;
-  var t = new WeakMap(), r = new WeakMap();
+  var r = new WeakMap(), t = new WeakMap();
   return (c = function (e) {
-    return e ? r : t;
+    return e ? t : r;
   })(e);
 }
-const s = n.globSync(['packages/**/*/build.json']), a = !process.argv.includes('--dev');
+const s = n.globSync(['packages/**/*/build.json']), u = !process.argv.includes('--dev');
 for (const n of s) {
   console.log(`> ${((0, o.join))(process.cwd(), n)}`);
-  let c = JSON.parse(((0, r.readFileSync))(((0, o.join))(process.cwd(), n), 'utf-8')), s = ((0, o.dirname))(n), u = ((0, o.join))(s, 'dist'), l = ((0, o.join))(s, 'types');
-  (((0, r.existsSync))(u) && ((0, r.rmSync))(u, {
+  let c = JSON.parse(((0, t.readFileSync))(((0, o.join))(process.cwd(), n), 'utf-8')), s = ((0, o.dirname))(n), a = ((0, o.join))(s, 'dist'), l = ((0, o.join))(s, 'types');
+  (((0, t.existsSync))(a) && ((0, t.rmSync))(a, {
     recursive: !0,
     force: !0
-  }), ((0, r.existsSync))(l) && ((0, r.rmSync))(l, {
+  }), ((0, t.existsSync))(l) && ((0, t.rmSync))(l, {
     recursive: !0,
     force: !0
   }));
@@ -55,36 +55,36 @@ for (const n of s) {
     outbase: ((0, o.join))(s, './src'),
     outdir: ((0, o.join))(s, './dist'),
     metafile: !0,
-    external: ['$staga-manifest', '$staga-client', '$staga-router', '$staga-pages'],
+    external: ['$sendary-manifest', '$sendary-client', '$sendary-router', '$sendary-pages'],
     jsx: 'automatic',
-    plugins: [((0, t.nodeExternalsPlugin))({
+    plugins: [((0, r.nodeExternalsPlugin))({
       packagePath: ((0, o.join))(s, 'package.json')
     }), i.esmSplitCodeToCjs]
   };
-  (console.log(u), ((0, e.build))((function (e, t) {
-    return (t = null != t ? t : {}, Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : (function (e, t) {
-      var r = Object.keys(e);
+  (console.log(a), ((0, e.build))((function (e, r) {
+    return (r = null != r ? r : {}, Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(r)) : (function (e, r) {
+      var t = Object.keys(e);
       if (Object.getOwnPropertySymbols) {
         var n = Object.getOwnPropertySymbols(e);
-        r.push.apply(r, n);
+        t.push.apply(t, n);
       }
-      return r;
-    })(Object(t)).forEach(function (r) {
-      Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r));
+      return t;
+    })(Object(r)).forEach(function (t) {
+      Object.defineProperty(e, t, Object.getOwnPropertyDescriptor(r, t));
     }), e);
   })((function (e) {
-    for (var t = 1; t < arguments.length; t++) {
-      var r = null != arguments[t] ? arguments[t] : {}, n = Object.keys(r);
-      ("function" == typeof Object.getOwnPropertySymbols && (n = n.concat(Object.getOwnPropertySymbols(r).filter(function (e) {
-        return Object.getOwnPropertyDescriptor(r, e).enumerable;
-      }))), n.forEach(function (t) {
+    for (var r = 1; r < arguments.length; r++) {
+      var t = null != arguments[r] ? arguments[r] : {}, n = Object.keys(t);
+      ("function" == typeof Object.getOwnPropertySymbols && (n = n.concat(Object.getOwnPropertySymbols(t).filter(function (e) {
+        return Object.getOwnPropertyDescriptor(t, e).enumerable;
+      }))), n.forEach(function (r) {
         var n;
-        (n = r[t], (t in e) ? Object.defineProperty(e, t, {
+        (n = t[r], (r in e) ? Object.defineProperty(e, r, {
           value: n,
           enumerable: !0,
           configurable: !0,
           writable: !0
-        }) : e[t] = n);
+        }) : e[r] = n);
       }));
     }
     return e;
@@ -97,7 +97,7 @@ for (const n of s) {
       '.js': '.mjs'
     },
     define: {
-      __DEV__: (!a).toString()
+      __DEV__: (!u).toString()
     }
   })));
 }

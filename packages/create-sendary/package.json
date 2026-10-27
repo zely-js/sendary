@@ -1,0 +1,15 @@
+{
+  "name": "create-sendary",
+  "version": "0.0.0",
+  "description": "Scaffold a new Sendary app",
+  "main": "./dist/index.js",
+  "bin": "./dist/index.js",
+  "files": [
+    "dist",
+    "template"
+  ],
+  "repository": "https://github.com/zely-js/sendary",
+  "dependencies": {
+    "animaux": "^0.1.0"
+  }
+}

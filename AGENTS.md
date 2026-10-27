@@ -1,24 +1,24 @@
 # AGENTS.md
 
-Staga is a Vite-plugin SSG framework for React, developed as a Yarn 1 workspaces repo.
+Sendary is a Vite-plugin SSG framework for React, developed as a Yarn 1 workspaces repo.
 There is no runnable app or dev server at the repo root; the framework is consumed by
 external Vite apps.
 
 ## Layout
 
-- `packages/staga` — published core: Vite plugin, esbuild page compiler, client runtime,
-  and the `staga/components` / `staga/client` entrypoints.
-- `packages/create-staga` — scaffold CLI plus a partial starter in `template/` (not a
+- `packages/sendary` — published core: Vite plugin, esbuild page compiler, client runtime,
+  and the `sendary/components` / `sendary/client` entrypoints.
+- `packages/create-sendary` — scaffold CLI plus a partial starter in `template/` (not a
   workspace app).
 - `packages/tsconfig/tsconfig.base.json` — shared TS config; defines `~/*` →
-  `packages/staga/src/*`.
+  `packages/sendary/src/*`.
 - No CI workflows exist; verification is local.
 
 ## Commands (from repo root)
 
 - `yarn test --run` — one-shot tests. Plain `yarn test` starts Vitest in **watch mode**.
 - `yarn vitest run <test-file> [-t "name"]` — single test file or case.
-- `yarn tsc --noEmit -p packages/staga/tsconfig.json` — typecheck per package.
+- `yarn tsc --noEmit -p packages/sendary/tsconfig.json` — typecheck per package.
   Do **not** use root `tsconfig.json`: it does not resolve `~/*` and reports false errors
   (and duplicate Vite types from `vitest.config.ts`).
 - `yarn lint-fix` — mutating ESLint/Prettier pass. There is no check-only lint script;
@@ -26,14 +26,14 @@ external Vite apps.
 - `yarn build` — runs `scripts/build.ts` via serpack, builds every entry listed in
   `packages/*/build.json` with esbuild, then emits `.d.ts` via Rollup. It deletes and
   recreates `packages/*/dist` first.
-- Set `BUILD_SUMMARY=true` when running `vite build` in a consumer app to print Staga's
+- Set `BUILD_SUMMARY=true` when running `vite build` in a consumer app to print Sendary's
   HTML/JS/CSS/data size summary.
 
 ## Architecture
 
-- `staga()` in `src/vite/index.ts` returns two Vite plugins: the dev/HMR plugin and
-  `staga:build` (`src/vite/build.ts`). Pages are always read from `<cwd>/pages` and written
-  to `.staga/` in dev or `build.outDir` in production.
+- `sendary()` in `src/vite/index.ts` returns two Vite plugins: the dev/HMR plugin and
+  `sendary:build` (`src/vite/build.ts`). Pages are always read from `<cwd>/pages` and written
+  to `.sendary/` in dev or `build.outDir` in production.
 - Page contract: a default export renders the page; named `getStaticProps(ctx)` and
   `getStaticParams()` are discovered by parsing source with `oxc-parser`. `_layout.tsx`
   maps to `[layout]` and `_error.tsx` to `[error]` (`src/core/routing.ts`). A dynamic page
@@ -41,20 +41,20 @@ external Vite apps.
   containing the literal `[param]` placeholder.
 - Each page is built twice by esbuild (`src/compiler/index.ts`): a browser ESM client
   module exporting `_page`, and a Node ESM server module exporting the static functions.
-  Intermediates land in `.staga/intermediate`.
-- `$staga-manifest`, `$staga-client`, `$staga-router`, and `$staga-pages` are Vite virtual
-  modules resolved in `src/vite/index.ts`; `$staga-pages` points at the generated
+  Intermediates land in `.sendary/intermediate`.
+- `$sendary-manifest`, `$sendary-client`, `$sendary-router`, and `$sendary-pages` are Vite virtual
+  modules resolved in `src/vite/index.ts`; `$sendary-pages` points at the generated
   `manifest.js`. Update `env.d.ts` when changing their contracts.
-- The server implementation of `$staga-router` is the string in
+- The server implementation of `$sendary-router` is the string in
   `src/compiler/server-router.ts`. Keep it as source text: the compiler ships as one
   bundled file and cannot resolve a sibling module at runtime.
-- Build flow: static props → `data/*.json`, SSR → HTML, then `.staga` intermediates are
+- Build flow: static props → `data/*.json`, SSR → HTML, then `.sendary` intermediates are
   deleted. Production hydration lives in `src/client/client.ts` and `src/client/router.ts`.
 
 ## Invariants and gotchas
 
 - Static pages must stay JS-free. `serverRendering` injects client scripts/manifest only
-  when the rendered HTML contains `data-staga-island`, and strips the `data-staga-client`
+  when the rendered HTML contains `data-sendary-island`, and strips the `data-sendary-client`
   script otherwise. Tests assert this; preserve the behavior.
 - `<Island>` is the only hydration boundary: it renders children with
   `renderToStaticMarkup` on the server, then hydrates a separate root in the browser.
