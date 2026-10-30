@@ -19,7 +19,7 @@
     "colors": "^1.4.0",
     "esbuild": "^0.25.8",
     "oxc-parser": "^0.79.1",
-    "vite": "^7.0.6"
+    "vite": "^7.3.7"
   },
   "devDependencies": {
     "react": "^19.1.1",
