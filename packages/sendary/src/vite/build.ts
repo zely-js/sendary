@@ -22,7 +22,7 @@ function formatFilesize(bytes: number) {
   const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / 1024 ** unit;
 
-  return `${value.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
+  return `${value.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`.gray;
 }
 
 function getStaticRoute(staticFile: string) {
@@ -64,16 +64,17 @@ export function createBuildSummary(
     });
 
   return [
-    'Sendary Build Summary',
-    `${files} files · ${formatFilesize(total)}`,
     '',
-    `  HTML       ${formatFilesize(sizes.html)}`,
-    `  JavaScript ${formatFilesize(sizes.javascript)}`,
-    `  CSS        ${formatFilesize(sizes.css)}`,
-    `  Data       ${formatFilesize(sizes.data)}`,
-    `  Other      ${formatFilesize(sizes.other)}`,
+    ' Build Summary '.white.bgGreen.bold + `  ${files} files · ${formatFilesize(total)}`,
     '',
-    `Static data (${rows.length} routes)`,
+    `  ${'HTML'.red}        ${formatFilesize(sizes.html)}`,
+    `  ${'JavaScript'.yellow}  ${formatFilesize(sizes.javascript)}`,
+    `  ${'CSS'.blue}         ${formatFilesize(sizes.css)}`,
+    `  ${'Data'.green}        ${formatFilesize(sizes.data)}`,
+    `  ${'Other'.gray}       ${formatFilesize(sizes.other)}`,
+    '',
+    ` Static data (${rows.length} routes) `.white.bgGreen.bold,
+    '',
     ...(rows.length ? rows : ['  No static data']),
   ].join('\n');
 }
